@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "971555919368",
+    "project_id": "sharebite-10aa5",
+    "storage_bucket": "sharebite-10aa5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:971555919368:android:072bc90e9f5f88e2c323bd",
+        "android_client_info": {
+          "package_name": "com.example.sharebite_admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDM5RxfJhYM44HE3TTe8qjcXGOLYq_G7CA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:971555919368:android:3958a7bc935c10bbc323bd",
+        "android_client_info": {
+          "package_name": "com.sharebite.app.sharebite"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDM5RxfJhYM44HE3TTe8qjcXGOLYq_G7CA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
