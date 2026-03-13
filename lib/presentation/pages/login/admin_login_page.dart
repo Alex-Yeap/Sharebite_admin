@@ -24,12 +24,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         password: _passwordController.text.trim(),
       );
 
-      if (mounted) {
-        Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const AdminLayout())
-        );
-      }
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Login Failed: ${e.message}"), backgroundColor: Colors.red),

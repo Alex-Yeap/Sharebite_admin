@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../controllers/admin_controller.dart';
 import '../../core/admin_theme.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SideMenu extends StatelessWidget {
   const SideMenu({super.key});
@@ -67,10 +68,29 @@ class SideMenu extends StatelessWidget {
             ),
           ),
 
-          // Footer
           Padding(
             padding: const EdgeInsets.all(20),
-            child: Text("v1.0.0+1", style: TextStyle(color: Colors.grey.shade800, fontSize: 10)),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red.shade400,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text("Secure Logout", style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text("v1.0.0+1", style: TextStyle(color: Colors.grey.shade800, fontSize: 10)),
+              ],
+            ),
           ),
         ],
       ),
