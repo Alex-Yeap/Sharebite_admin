@@ -88,7 +88,7 @@ class SideMenu extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text("v1.0.0+1", style: TextStyle(color: Colors.grey.shade800, fontSize: 10)),
+                Text("v5.4.0+1", style: TextStyle(color: Colors.grey.shade800, fontSize: 10)),
               ],
             ),
           ),
