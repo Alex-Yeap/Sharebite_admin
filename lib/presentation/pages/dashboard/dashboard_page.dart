@@ -26,6 +26,10 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<AdminController>(context, listen: false).runAdminSafetySweep();
+    });
+
     _runDatabaseCleanup();
     _cleanupTimer = Timer.periodic(const Duration(minutes: 5), (timer) { _runDatabaseCleanup(); });
   }
@@ -101,7 +105,6 @@ class _DashboardPageState extends State<DashboardPage> {
               physics: const NeverScrollableScrollPhysics(),
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              // Adjust ratio dynamically to prevent squishing on different screens
               childAspectRatio: isWide ? 2.2 : 1.8,
               children: [
                 _StatCard(title: "Total Users", icon: FontAwesomeIcons.users, color: Colors.orange, stream: FirebaseFirestore.instance.collection('users').snapshots(), onTap: () => controller.navigateTo(AdminPage.users)),
@@ -111,7 +114,6 @@ class _DashboardPageState extends State<DashboardPage> {
               ],
             );
 
-            // Green Impact Tree
             final treeWidget = InkWell(
               onTap: () => controller.navigateTo(AdminPage.detailedReports, tabIndex: 0),
               child: SizedBox(
@@ -120,7 +122,6 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             );
 
-            // User Demographics Pie
             final pieWidget = SizedBox(
               height: 250,
               child: _buildUserPieChart(),
@@ -128,7 +129,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
             if (isWide) {
               return Row(
-                crossAxisAlignment: CrossAxisAlignment.start, // Allows children to dictate height naturally
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(flex: 3, child: statsGrid),
                   const SizedBox(width: 16),
@@ -140,7 +141,7 @@ class _DashboardPageState extends State<DashboardPage> {
             } else {
               return Column(
                 children: [
-                  statsGrid, // Removed the strict 240 height restriction!
+                  statsGrid,
                   const SizedBox(height: 16),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

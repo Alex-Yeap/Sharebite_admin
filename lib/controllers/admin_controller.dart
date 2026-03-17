@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:csv/csv.dart';
+import 'package:universal_html/html.dart' as html;
+import 'dart:convert';
+import 'package:intl/intl.dart';
 
 enum AdminPage { dashboard, detailedReports, users, banned, reports, listings }
 
@@ -15,14 +19,38 @@ class AdminController extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
-  //nav
   void navigateTo(AdminPage page, {int tabIndex = 0}) {
     _currentPage = page;
     _detailedReportTabIndex = tabIndex;
     notifyListeners();
   }
 
-  //ban user
+  Future<void> runAdminSafetySweep() async {
+    try {
+      final snapshot = await _firestore.collection('users')
+          .where('role', isEqualTo: 'student')
+          .where('meritScore', isLessThanOrEqualTo: 40)
+          .where('isSuspended', isEqualTo: false)
+          .get();
+
+      if (snapshot.docs.isEmpty) return;
+
+      final batch = _firestore.batch();
+      final suspensionDate = Timestamp.fromDate(DateTime.now().add(const Duration(days: 5)));
+
+      for (var doc in snapshot.docs) {
+        batch.update(doc.reference, {
+          'isSuspended': true,
+          'suspensionEndDate': suspensionDate,
+        });
+      }
+
+      await batch.commit();
+    } catch (e) {
+      print("Error during safety sweep: $e");
+    }
+  }
+
   Future<void> banUser(String userId, String reason) async {
     _isLoading = true;
     notifyListeners();
@@ -31,6 +59,7 @@ class AdminController extends ChangeNotifier {
         'isSuspended': true,
         'banReason': reason,
         'bannedAt': Timestamp.now(),
+        'suspensionEndDate': FieldValue.delete(),
       });
     } catch (e) {
       print("Error banning user: $e");
@@ -39,16 +68,22 @@ class AdminController extends ChangeNotifier {
     notifyListeners();
   }
 
-  //unban
-  Future<void> unbanUser(String userId) async {
+  Future<void> unbanUser(String userId, {int? currentMeritScore}) async {
     _isLoading = true;
     notifyListeners();
     try {
-      await _firestore.collection('users').doc(userId).update({
+      Map<String, dynamic> updates = {
         'isSuspended': false,
         'banReason': FieldValue.delete(),
         'bannedAt': FieldValue.delete(),
-      });
+        'suspensionEndDate': FieldValue.delete(),
+      };
+
+      if (currentMeritScore != null && currentMeritScore <= 40) {
+        updates['meritScore'] = 50;
+      }
+
+      await _firestore.collection('users').doc(userId).update(updates);
     } catch (e) {
       print("Error unbanning user: $e");
     }
@@ -56,7 +91,6 @@ class AdminController extends ChangeNotifier {
     notifyListeners();
   }
 
-  //delete posted listing
   Future<void> deleteListing(String listingId) async {
     _isLoading = true;
     notifyListeners();
@@ -69,7 +103,6 @@ class AdminController extends ChangeNotifier {
     notifyListeners();
   }
 
-  //resolve report
   Future<void> resolveReport(String reportId) async {
     try {
       await _firestore.collection('reports').doc(reportId).update({
@@ -99,7 +132,16 @@ class AdminController extends ChangeNotifier {
         if (newScore > 100) newScore = 100;
         if (newScore < 0) newScore = 0;
 
-        transaction.update(userRef, {'meritScore': newScore});
+        Map<String, dynamic> updates = {'meritScore': newScore};
+
+        if (newScore <= 40 && (userData['isSuspended'] == false || userData['isSuspended'] == null)) {
+          updates['isSuspended'] = true;
+          updates['suspensionEndDate'] = Timestamp.fromDate(DateTime.now().add(const Duration(days: 5)));
+          updates['banReason'] = 'System: Merit dropped to $newScore due to Admin deduction';
+          updates['bannedAt'] = Timestamp.now();
+        }
+
+        transaction.update(userRef, updates);
 
         DocumentReference logRef = _firestore.collection('merit_logs').doc();
         transaction.set(logRef, {
@@ -120,7 +162,6 @@ class AdminController extends ChangeNotifier {
     }
   }
 
-  //moderator
   Future<bool> moderateContent({
     required String reportId,
     required String targetId,
@@ -174,6 +215,7 @@ class AdminController extends ChangeNotifier {
             updates['isSuspended'] = true;
             updates['banReason'] = 'Violated community guidelines (Inappropriate Review)';
             updates['bannedAt'] = Timestamp.now();
+            updates['suspensionEndDate'] = FieldValue.delete();
           }
 
           if (deductMerit) {
@@ -183,6 +225,13 @@ class AdminController extends ChangeNotifier {
             int newScore = currentScore - 10;
             if (newScore < 0) newScore = 0;
             updates['meritScore'] = newScore;
+
+            if (newScore <= 40 && !suspendUser) {
+              updates['isSuspended'] = true;
+              updates['suspensionEndDate'] = Timestamp.fromDate(DateTime.now().add(const Duration(days: 5)));
+              updates['banReason'] = 'System: Merit dropped to $newScore due to Admin penalty';
+              updates['bannedAt'] = Timestamp.now();
+            }
 
             DocumentReference logRef = _firestore.collection('merit_logs').doc();
             transaction.set(logRef, {
@@ -210,5 +259,67 @@ class AdminController extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<void> exportUsersToCsv({
+    required String roleFilter,
+    required bool sortAlpha,
+    required bool includeSuspendedCol,
+  }) async {
+    Query query = _firestore.collection('users');
+    if (roleFilter != 'All') {
+      query = query.where('role', isEqualTo: roleFilter.toLowerCase());
+    }
+
+    final snapshot = await query.get();
+
+    List<Map<String, dynamic>> users = snapshot.docs.map((d) {
+      var data = d.data() as Map<String, dynamic>;
+      data['id'] = d.id;
+      return data;
+    }).toList();
+
+    if (sortAlpha) {
+      users.sort((a, b) {
+        String nameA = (a['name'] ?? a['businessName'] ?? '').toString().toLowerCase();
+        String nameB = (b['name'] ?? b['businessName'] ?? '').toString().toLowerCase();
+        return nameA.compareTo(nameB);
+      });
+    }
+
+    List<List<dynamic>> rows = [];
+    List<String> headers = ["ID", "Name/Business", "Email", "Role", "Joined Date", "Merit Score"];
+    if (includeSuspendedCol) headers.add("Is Suspended");
+    rows.add(headers);
+
+    for (var data in users) {
+      final role = data['role'] ?? 'Unknown';
+      final name = role == 'merchant' ? data['businessName'] : data['name'];
+      final joined = data['createdAt'] != null ? DateFormat('yyyy-MM-dd').format((data['createdAt'] as Timestamp).toDate()) : 'Unknown';
+
+      List<dynamic> row = [
+        data['id'],
+        name ?? "Unknown",
+        data['email'] ?? "",
+        role,
+        joined,
+        data['meritScore'] ?? (role == 'student' ? 100 : 'N/A'),
+      ];
+
+      if (includeSuspendedCol) {
+        row.add(data['isSuspended'] ?? false);
+      }
+
+      rows.add(row);
+    }
+
+    String csv = const ListToCsvConverter().convert(rows);
+    final bytes = utf8.encode(csv);
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..setAttribute("download", "sharebite_users_export_${DateTime.now().millisecondsSinceEpoch}.csv")
+      ..click();
+    html.Url.revokeObjectUrl(url);
   }
 }

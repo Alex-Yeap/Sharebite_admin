@@ -78,23 +78,30 @@ class _BannedUsersPageState extends State<BannedUsersPage> with SingleTickerProv
           if (docs.isEmpty) return const Center(child: Text("No suspended accounts in this category."));
 
           return DataTable2(
-            columnSpacing: 12, horizontalMargin: 12, minWidth: 800,
+            columnSpacing: 12, horizontalMargin: 12, minWidth: 900,
             headingTextStyle: AdminTheme.tableHeader,
             columns: const [
               DataColumn2(label: Text('Identity'), size: ColumnSize.M),
               DataColumn2(label: Text('Ban Reason'), size: ColumnSize.L),
               DataColumn(label: Text('Banned Date')),
+              DataColumn(label: Text('Suspension Ends')),
               DataColumn(label: Text('Actions')),
             ],
             rows: docs.map((doc) {
               final data = doc.data() as Map<String, dynamic>;
               final name = role == 'merchant' ? data['businessName'] : data['name'];
               final date = data['bannedAt'] != null ? DateFormat('MMM dd, yyyy').format((data['bannedAt'] as Timestamp).toDate()) : '-';
+              final currentScore = data['meritScore'] ?? 100;
+
+              final endDateStr = data['suspensionEndDate'] != null
+                  ? DateFormat('MMM dd, yyyy').format((data['suspensionEndDate'] as Timestamp).toDate())
+                  : 'Indefinite';
 
               return DataRow(cells: [
                 DataCell(Text(name ?? "Unknown", style: const TextStyle(fontWeight: FontWeight.bold))),
                 DataCell(Text(data['banReason'] ?? "Policy Violation", style: const TextStyle(color: Colors.red))),
                 DataCell(Text(date)),
+                DataCell(Text(endDateStr, style: TextStyle(color: data['suspensionEndDate'] != null ? Colors.orange.shade800 : Colors.red, fontWeight: FontWeight.bold))),
                 DataCell(
                   ElevatedButton.icon(
                     icon: const Icon(Icons.lock_open, size: 16),
@@ -103,8 +110,18 @@ class _BannedUsersPageState extends State<BannedUsersPage> with SingleTickerProv
                     onPressed: () {
                       showDialog(context: context, builder: (ctx) => AlertDialog(
                         title: const Text("Restore Account?"),
-                        content: Text("This will allow $name to log in again."),
-                        actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text("Cancel")), ElevatedButton(onPressed: (){ controller.unbanUser(doc.id); Navigator.pop(ctx); }, child: const Text("Restore Access"))],
+                        content: Text("This will allow $name to log in again.\n\nNote: If they were suspended for low merit, their score will automatically boost to 50."),
+                        actions: [
+                          TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text("Cancel")),
+                          ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                              onPressed: (){
+                                controller.unbanUser(doc.id, currentMeritScore: currentScore);
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text("Restore Access")
+                          )
+                        ],
                       ));
                     },
                   ),

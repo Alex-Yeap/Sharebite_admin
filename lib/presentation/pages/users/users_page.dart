@@ -1,12 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:csv/csv.dart';
-import 'package:universal_html/html.dart' as html;
 
 import '../../../controllers/admin_controller.dart';
 import '../../../core/admin_theme.dart';
@@ -28,41 +25,72 @@ class _UsersPageState extends State<UsersPage> with SingleTickerProviderStateMix
     _tabController = TabController(length: 2, vsync: this);
   }
 
-  // --- CSV EXPORT LOGIC ---
-  Future<void> _exportToCsv(String role) async {
-    final snapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: role).get();
+  void _showExportDialog(BuildContext context, AdminController controller) {
+    String selectedRole = 'All';
+    bool sortAlphabetically = true;
+    bool includeSuspendedColumn = true;
 
-    List<List<dynamic>> rows = [];
-    rows.add(["ID", "Name/Business", "Email", "Role", "Joined Date", "Merit Score", "Is Suspended"]);
-
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final name = role == 'merchant' ? data['businessName'] : data['name'];
-      final joined = data['createdAt'] != null ? DateFormat('yyyy-MM-dd').format((data['createdAt'] as Timestamp).toDate()) : 'Unknown';
-
-      rows.add([
-        doc.id,
-        name ?? "Unknown",
-        data['email'] ?? "",
-        data['role'] ?? "",
-        joined,
-        data['meritScore'] ?? (role == 'student' ? 100 : 'N/A'),
-        data['isSuspended'] ?? false,
-      ]);
-    }
-
-    String csv = const ListToCsvConverter().convert(rows);
-    final bytes = utf8.encode(csv);
-    final blob = html.Blob([bytes]);
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute("download", "sharebite_${role}s_export.csv")
-      ..click();
-    html.Url.revokeObjectUrl(url);
+    showDialog(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+              builder: (context, setState) {
+                return AlertDialog(
+                  title: const Text("Export Users to CSV"),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: selectedRole,
+                        decoration: const InputDecoration(labelText: "Select Group to Export"),
+                        items: ['All', 'Student', 'Merchant'].map((String val) {
+                          return DropdownMenuItem(value: val, child: Text(val));
+                        }).toList(),
+                        onChanged: (val) => setState(() => selectedRole = val!),
+                      ),
+                      const SizedBox(height: 16),
+                      SwitchListTile(
+                        title: const Text("Sort Alphabetically"),
+                        value: sortAlphabetically,
+                        activeColor: AdminTheme.merchantOrange,
+                        onChanged: (val) => setState(() => sortAlphabetically = val),
+                      ),
+                      SwitchListTile(
+                        title: const Text("Include 'Suspended' Column"),
+                        value: includeSuspendedColumn,
+                        activeColor: AdminTheme.merchantOrange,
+                        onChanged: (val) => setState(() => includeSuspendedColumn = val),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.grey))),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.download, size: 16),
+                      label: const Text("Export"),
+                      style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.merchantOrange, foregroundColor: Colors.white),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        controller.exportUsersToCsv(
+                          roleFilter: selectedRole,
+                          sortAlpha: sortAlphabetically,
+                          includeSuspendedCol: includeSuspendedColumn,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("CSV Export Started!"), backgroundColor: Colors.green));
+                      },
+                    )
+                  ],
+                );
+              }
+          );
+        }
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final adminController = Provider.of<AdminController>(context, listen: false);
+
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1400),
@@ -91,17 +119,14 @@ class _UsersPageState extends State<UsersPage> with SingleTickerProviderStateMix
                       ),
                       const SizedBox(width: 16),
                       ElevatedButton.icon(
-                        icon: const Icon(Icons.download, size: 16),
-                        label: const Text("Export CSV"),
+                        icon: const Icon(Icons.tune, size: 16),
+                        label: const Text("Advanced Export"),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AdminTheme.midnightBlack,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
                         ),
-                        onPressed: () {
-                          final currentRole = _tabController.index == 0 ? "student" : "merchant";
-                          _exportToCsv(currentRole);
-                        },
+                        onPressed: () => _showExportDialog(context, adminController),
                       ),
                     ],
                   ),
@@ -188,7 +213,7 @@ class _UsersPageState extends State<UsersPage> with SingleTickerProviderStateMix
                 DataCell(Text(joined)),
 
                 if (targetRole == 'student')
-                  DataCell(Text("$score", style: TextStyle(color: score < 40 ? Colors.red : Colors.green, fontWeight: FontWeight.bold))),
+                  DataCell(Text("$score", style: TextStyle(color: score <= 40 ? Colors.red : Colors.green, fontWeight: FontWeight.bold))),
 
                 DataCell(Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -200,7 +225,6 @@ class _UsersPageState extends State<UsersPage> with SingleTickerProviderStateMix
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // MERIT MANAGEMENT BUTTON (Students Only)
                       if (targetRole == 'student')
                         IconButton(
                           icon: const Icon(Icons.star_half, color: Colors.amber),
@@ -240,7 +264,6 @@ class _UsersPageState extends State<UsersPage> with SingleTickerProviderStateMix
     ));
   }
 
-  // --- MANUAL MERIT POINT DIALOG ---
   void _showMeritDialog(BuildContext context, String uid, String? name, AdminController controller) {
     final pointsCtrl = TextEditingController();
     final reasonCtrl = TextEditingController();
@@ -267,6 +290,7 @@ class _UsersPageState extends State<UsersPage> with SingleTickerProviderStateMix
       actions: [
         TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text("Cancel")),
         ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AdminTheme.merchantOrange, foregroundColor: Colors.white),
             onPressed: () async {
               final points = int.tryParse(pointsCtrl.text);
               final reason = reasonCtrl.text.trim();
